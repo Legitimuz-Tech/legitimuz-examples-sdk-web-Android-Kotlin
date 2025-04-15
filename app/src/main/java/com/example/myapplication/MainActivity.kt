@@ -134,7 +134,7 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(WebAppInterface(this), "Android")
 
         // Load the URL of the domain (for example, a remote SDK page)
-        webView.loadUrl("https://betano.legitimuz.com/en-new/") // Replace with your actual URL
+        webView.loadUrl("https://demo.legitimuz.com/liveness/") // Replace with your actual URL
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
