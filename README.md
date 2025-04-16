@@ -132,6 +132,8 @@ webView.addJavascriptInterface(WebAppInterface(this), "Android")
 
 ```kotlin
 webView.loadUrl("https://demo.legitimuz.com/liveness/")
+// Alternative URL for KYC verification:
+// webView.loadUrl("https://demo.legitimuz.com/teste-kyc/")
 ```
 
 ### 9. Toggle between WebView and Navigation
