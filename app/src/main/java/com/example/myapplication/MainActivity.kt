@@ -84,24 +84,6 @@ class MainActivity : AppCompatActivity() {
         webSettings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW) // Allow mixed content
         webSettings.mediaPlaybackRequiresUserGesture = false // Allow media playback without user gesture
 
-        // Set WebViewClient to handle internal links
-        webView.webViewClient = object : WebViewClient() {
-            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                super.onReceivedError(view, request, error)
-                Log.e("WebView Error", "Error: ${error?.description}")
-            }
-
-            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                super.onPageStarted(view, url, favicon)
-                Log.d("WebView Host", "Host: $url")
-            }
-
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                Log.d("WebView Host", "Finished loading: $url")
-            }
-        }
-
         // WebChromeClient to handle camera permissions
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest?) {
@@ -117,24 +99,188 @@ class MainActivity : AppCompatActivity() {
 
         // JavaScript interface to handle SDK success and error events
         class WebAppInterface(private val context: MainActivity) {
+            private val TAG = "LegitimuzSDK"
+            
             @JavascriptInterface
             fun onSuccess(eventName: String) {
                 // Handle success event
-                Log.d("SDK Success", "Event: $eventName")
+                Log.i(TAG, "SUCCESS EVENT: $eventName")
+                context.runOnUiThread {
+                    Snackbar.make(context.binding.root, "Success: $eventName", Snackbar.LENGTH_SHORT).show()
+                }
             }
 
             @JavascriptInterface
-            fun onError(eventName: String) {
+            fun onError(eventName: String, errorMessage: String = "") {
                 // Handle error event
-                Log.d("SDK Error", "Event: $eventName")
+                Log.e(TAG, "ERROR EVENT: $eventName, Error Message: $errorMessage")
+                context.runOnUiThread {
+                    Snackbar.make(context.binding.root, "Error: $eventName", Snackbar.LENGTH_SHORT).show()
+                }
+            }
+            
+            @JavascriptInterface
+            fun onManualAction(eventName: String, data: String = "") {
+                // Handle manual status events that require user intervention
+                Log.i(TAG, "MANUAL ACTION REQUIRED: $eventName")
+                Log.i(TAG, "Event Data: $data")
+                
+                context.runOnUiThread {
+                    // Show a more distinctive message for manual events
+                    val snackbar = Snackbar.make(
+                        context.binding.root, 
+                        "Manual verification required: $eventName", 
+                        Snackbar.LENGTH_LONG
+                    )
+                    snackbar.setAction("Details") {
+                        // Show details dialog or additional information
+                        android.widget.Toast.makeText(
+                            context, 
+                            "Manual verification needed for: $eventName",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    snackbar.show()
+                }
+            }
+            
+            @JavascriptInterface
+            fun onMessage(eventName: String, data: String = "") {
+                // Generic message handler for any event from the website
+                Log.i(TAG, "MESSAGE RECEIVED: $eventName")
+                Log.i(TAG, "Event Data: $data")
+                
+                context.runOnUiThread {
+                    when (eventName) {
+                        "close-modal" -> Snackbar.make(context.binding.root, "Modal closed", Snackbar.LENGTH_SHORT).show()
+                        "ocr" -> Snackbar.make(context.binding.root, "Document scanned", Snackbar.LENGTH_SHORT).show()
+                        "facematch" -> Snackbar.make(context.binding.root, "Face matching completed", Snackbar.LENGTH_LONG).show()
+                        "redirect" -> Snackbar.make(context.binding.root, "Redirect requested", Snackbar.LENGTH_SHORT).show()
+                        "sms-confirmation" -> Snackbar.make(context.binding.root, "SMS verification", Snackbar.LENGTH_LONG).show()
+                        "sow" -> Snackbar.make(context.binding.root, "Statement of Work completed", Snackbar.LENGTH_LONG).show()
+                        "faceindex" -> Snackbar.make(context.binding.root, "Face indexing completed", Snackbar.LENGTH_LONG).show()
+                        else -> Snackbar.make(context.binding.root, "Event: $eventName", Snackbar.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            
+            // Add a simple debug method that can be called from JavaScript
+            @JavascriptInterface
+            fun debugLog(message: String) {
+                Log.d(TAG, "JS DEBUG: $message")
             }
         }
 
         // Add JavaScript interface to WebView
         webView.addJavascriptInterface(WebAppInterface(this), "Android")
 
-        // Load the URL of the domain (for example, a remote SDK page)
-        webView.loadUrl("https://demo.legitimuz.com/liveness/") // Replace with your actual URL
+        // Set WebViewClient to handle internal links and inject JavaScript for handling events
+        webView.webViewClient = object : WebViewClient() {
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                super.onReceivedError(view, request, error)
+                Log.e("WebView Error", "Error: ${error?.description}")
+            }
+
+            override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                super.onPageStarted(view, url, favicon)
+                Log.d("WebView Host", "Host: $url")
+            }
+
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                Log.d("WebView Host", "Finished loading: $url")
+                
+                // Inject JavaScript to listen for postMessage events
+                val eventListenerScript = """
+                    (function() {
+                        console.log('Legitimuz event handler initialized');
+                        
+                        // Listen for postMessage events
+                        window.addEventListener('message', function(event) {
+                            console.log('Received message from: ' + event.origin);
+                            
+                            // Only process messages from legitimuz domains
+                            if (event.origin.includes('legitimuz.com')) {
+                                try {
+                                    var data = event.data;
+                                    
+                                    // Parse data if it's a string
+                                    if (typeof data === 'string') {
+                                        try { data = JSON.parse(data); } catch(e) {}
+                                    }
+                                    
+                                    console.log('Processing event data: ' + JSON.stringify(data));
+                                    
+                                    // Handle event based on format
+                                    if (data.name) {
+                                        var eventName = data.name;
+                                        var status = data.status || '';
+                                        
+                                        if (status === 'success') {
+                                            window.Android.onSuccess(eventName);
+                                        } else if (status === 'error') {
+                                            window.Android.onError(eventName, data.error || '');
+                                        } else if (status === 'manual') {
+                                            window.Android.onManualAction(eventName, JSON.stringify(data));
+                                        } else {
+                                            window.Android.onMessage(eventName, JSON.stringify(data));
+                                        }
+                                    } else {
+                                        window.Android.onMessage('generic_event', JSON.stringify(data));
+                                    }
+                                } catch(e) {
+                                    console.error('Error processing message:', e);
+                                    window.Android.debugLog('Error: ' + e.toString());
+                                }
+                            }
+                        });
+                        
+                        console.log('Legitimuz event listener registered');
+                    })();
+                """.trimIndent()
+                
+                view?.evaluateJavascript(eventListenerScript, null)
+            }
+        }
+
+        // Load the URL of the domain
+        webView.loadUrl("https://demo.legitimuz.com/teste-kyc/")
+        
+        // Add button to send a test event
+        binding.fab.setOnClickListener { view ->
+            sendTestEvent(webView)
+            Snackbar.make(view, "Sent test event", Snackbar.LENGTH_SHORT).show()
+        }
+    }
+    
+    // Helper method to send a test event to simulate SDK interactions
+    private fun sendTestEvent(webView: WebView) {
+        val testScript = """
+            (function() {
+                console.log('Sending test events from Android');
+                
+                // Simulate a success event
+                window.postMessage({
+                    name: 'test_event',
+                    status: 'success',
+                    data: { source: 'Android app' }
+                }, '*');
+                
+                // Simulate a manual verification event
+                window.postMessage({
+                    name: 'facematch',
+                    status: 'manual',
+                    data: { 
+                        confidence: 0.65,
+                        reason: 'Low confidence score'
+                    }
+                }, '*');
+                
+                return "Test events sent";
+            })();
+        """.trimIndent()
+        
+        webView.evaluateJavascript(testScript, null)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
